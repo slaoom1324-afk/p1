@@ -1,0 +1,40 @@
+name: build
+on:
+  workflow_dispatch:
+  push:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Find project
+        run: |
+          if [ -f build.gradle ]; then
+            echo "DIR=." >> "$GITHUB_ENV"
+          else
+            unzip -q ./*.zip -d proj
+            echo "DIR=$(dirname "$(find proj -maxdepth 3 -name build.gradle | head -n 1)")" >> "$GITHUB_ENV"
+          fi
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.12
+      - name: Build
+        working-directory: ${{ env.DIR }}
+        run: |
+          set -o pipefail
+          gradle build --no-daemon 2>&1 | tee build.log
+      - name: Show errors in summary
+        if: failure()
+        working-directory: ${{ env.DIR }}
+        run: |
+          echo "## Build errors" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          { grep -E "error:" -A 2 build.log; grep -A 8 "What went wrong" build.log; } | head -n 80 | sed 's/^/    /' >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: md5n-jar
+          path: ${{ env.DIR }}/build/libs/*.jar
